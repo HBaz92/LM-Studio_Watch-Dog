@@ -70,7 +70,7 @@ DOCKERHUB_TOKEN    = <Docker Hub access token>
 Push to `main`, or create a version tag:
 
 ```powershell
-git tag v1.0.10
+git tag v1.0.11
 git push origin main --tags
 ```
 
@@ -78,8 +78,8 @@ git push origin main --tags
 
 ```powershell
 docker login
-docker build -t hassanbaz92/lm-studio-watchdog:1.0.10 .
-docker tag hassanbaz92/lm-studio-watchdog:1.0.10 hassanbaz92/lm-studio-watchdog:latest
-docker push hassanbaz92/lm-studio-watchdog:1.0.10
+docker build -t hassanbaz92/lm-studio-watchdog:1.0.11 .
+docker tag hassanbaz92/lm-studio-watchdog:1.0.11 hassanbaz92/lm-studio-watchdog:latest
+docker push hassanbaz92/lm-studio-watchdog:1.0.11
 docker push hassanbaz92/lm-studio-watchdog:latest
 ```

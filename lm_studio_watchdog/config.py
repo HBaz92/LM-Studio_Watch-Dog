@@ -99,6 +99,7 @@ class AppConfig:
     exclude_files: list[str] = field(default_factory=list)
     exclude_globs: list[str] = field(default_factory=list)
     exclude_extensions: list[str] = field(default_factory=list)
+    include_files: list[str] = field(default_factory=list)
     include_extensions: list[str] = field(default_factory=list)
 
     @classmethod
@@ -147,6 +148,7 @@ class AppConfig:
         self.exclude_files = clean_list(self.exclude_files)
         self.exclude_globs = clean_list(self.exclude_globs, slash_paths=True)
         self.exclude_extensions = normalize_extensions(self.exclude_extensions)
+        self.include_files = clean_list(self.include_files, slash_paths=True)
         self.include_extensions = normalize_extensions(self.include_extensions)
         if is_custom_project_type(self.project_type) and self.project_type not in self.custom_presets:
             self.custom_presets[self.project_type] = {
@@ -155,6 +157,7 @@ class AppConfig:
                 "exclude_files": list(self.exclude_files),
                 "exclude_globs": list(self.exclude_globs),
                 "exclude_extensions": list(self.exclude_extensions),
+                "include_files": list(self.include_files),
                 "include_extensions": list(self.include_extensions),
             }
 
@@ -269,6 +272,7 @@ def normalize_custom_presets(value: Any) -> dict[str, dict[str, Any]]:
             "exclude_files": clean_list(preset.get("exclude_files")),
             "exclude_globs": clean_list(preset.get("exclude_globs"), slash_paths=True),
             "exclude_extensions": normalize_extensions(preset.get("exclude_extensions")),
+            "include_files": clean_list(preset.get("include_files"), slash_paths=True),
             "include_extensions": normalize_extensions(preset.get("include_extensions")),
         }
     return normalized

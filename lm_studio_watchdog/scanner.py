@@ -65,6 +65,74 @@ def matches_any_glob(relative_path: str, patterns: Iterable[str]) -> bool:
     return False
 
 
+def normalize_rule_path(value: str) -> str:
+    path = str(value or "").strip().replace("\\", "/").strip("/")
+    while path.startswith("./"):
+        path = path[2:]
+    return path
+
+
+def file_rule_matches(relative_path: str, filename: str, patterns: Iterable[str]) -> bool:
+    relative_key = normalize_rule_path(relative_path).lower()
+    filename_key = filename.lower()
+    for pattern in patterns:
+        normalized = normalize_rule_path(pattern)
+        if not normalized:
+            continue
+        pattern_key = normalized.lower()
+        if "/" in pattern_key:
+            if relative_key == pattern_key:
+                return True
+        elif filename_key == pattern_key:
+            return True
+    return False
+
+
+def included_file_matches(relative_path: str, filename: str, rules: RuleSet) -> bool:
+    return file_rule_matches(relative_path, filename, rules.include_files)
+
+
+def directory_matches_exclude_dir(relative_path: str, dirname: str, rules: RuleSet) -> bool:
+    relative_key = normalize_rule_path(relative_path).lower()
+    dirname_key = dirname.lower()
+    for pattern in rules.exclude_dirs:
+        normalized = normalize_rule_path(pattern)
+        if not normalized:
+            continue
+        pattern_key = normalized.lower()
+        if "/" in pattern_key:
+            if relative_key == pattern_key:
+                return True
+        elif dirname_key == pattern_key:
+            return True
+    return False
+
+
+def has_excluded_parent(relative_path: str, rules: RuleSet) -> bool:
+    parts = normalize_rule_path(relative_path).split("/")
+    for index in range(1, len(parts)):
+        parent = "/".join(parts[:index])
+        if directory_matches_exclude_dir(parent, parts[index - 1], rules):
+            return True
+        if matches_any_glob(parent, rules.exclude_globs):
+            return True
+    return False
+
+
+def directory_contains_included_file(relative_path: str, rules: RuleSet) -> bool:
+    directory = normalize_rule_path(relative_path).lower().rstrip("/")
+    if not directory:
+        return False
+
+    for include_file in rules.include_files:
+        normalized = normalize_rule_path(include_file).lower()
+        if "/" not in normalized:
+            continue
+        if normalized.startswith(directory + "/"):
+            return True
+    return False
+
+
 def should_exclude(
     root: Path,
     path: Path,
@@ -81,11 +149,24 @@ def should_exclude(
         return True, "generated output"
 
     name = path.name
-    if is_dir and name in rules.exclude_dirs:
-        return True, f"excluded directory: {name}"
+    if is_dir:
+        excluded_directory = (
+            has_excluded_parent(relative, rules)
+            or directory_matches_exclude_dir(relative, name, rules)
+            or matches_any_glob(relative, rules.exclude_globs)
+        )
+        if excluded_directory:
+            if directory_contains_included_file(relative, rules):
+                return False, ""
+            return True, f"excluded directory: {name}"
+        return False, ""
 
     if not is_dir:
-        if name in rules.exclude_files:
+        if included_file_matches(relative, name, rules):
+            return False, ""
+        if has_excluded_parent(relative, rules):
+            return True, "excluded parent directory"
+        if file_rule_matches(relative, name, rules.exclude_files):
             return True, f"excluded file: {name}"
         matched_extensions = file_extensions(path) & rules.exclude_extensions
         if matched_extensions:
@@ -97,7 +178,9 @@ def should_exclude(
     return False, ""
 
 
-def is_mergeable_file(path: Path, rules: RuleSet) -> bool:
+def is_mergeable_file(path: Path, rules: RuleSet, relative_path: str = "") -> bool:
+    if relative_path and included_file_matches(relative_path, path.name, rules):
+        return True
     if path.name in rules.include_filenames:
         return True
     return bool(file_extensions(path) & rules.include_extensions)
@@ -142,7 +225,7 @@ def iter_mergeable_files(config: AppConfig, rules: RuleSet | None = None) -> Ite
     for record in iter_project_files(config, active_rules):
         if record.size > active_rules.max_file_size_bytes:
             continue
-        if not is_mergeable_file(record.absolute_path, active_rules):
+        if not is_mergeable_file(record.absolute_path, active_rules, record.relative_path):
             continue
         yield record
 

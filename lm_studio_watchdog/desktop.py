@@ -50,6 +50,7 @@ from .config import (
     normalize_custom_presets,
     save_config,
 )
+from .discovery import discover_rule_candidates, empty_rule_candidates
 from .pipeline import PipelineResult, run_pipeline
 from .presets import preset_rule_lists
 from .watcher import PollingWatcher
@@ -61,6 +62,7 @@ RULE_CATEGORIES = (
     "exclude_files",
     "exclude_globs",
     "exclude_extensions",
+    "include_files",
     "include_extensions",
 )
 
@@ -190,6 +192,7 @@ QComboBox {
 QLineEdit:disabled,
 QComboBox:disabled,
 QListWidget#RuleList:disabled,
+QListWidget#RuleDiscoveryList:disabled,
 QPlainTextEdit#RuleBox:disabled {
     background: #eef2f6;
     border: 1px solid #d0d5dd;
@@ -391,9 +394,26 @@ QListWidget#RuleList::item {
     border: 0;
     margin: 2px 0;
 }
+QListWidget#RuleDiscoveryList {
+    background: #f7fbff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    color: #1f2937;
+    padding: 5px;
+    outline: 0;
+}
+QListWidget#RuleDiscoveryList::item {
+    border: 0;
+    margin: 2px 0;
+}
 QFrame#RuleItem {
     background: #ffffff;
     border: 1px solid #cbd5e1;
+    border-radius: 7px;
+}
+QFrame#RuleSuggestionItem {
+    background: #eaf4ff;
+    border: 1px solid #b8d8fb;
     border-radius: 7px;
 }
 QFrame#RuleItem[searchMatch="true"] {
@@ -403,6 +423,16 @@ QFrame#RuleItem[searchMatch="true"] {
 QLineEdit#RuleSearchInput,
 QLineEdit#RuleAddInput {
     min-height: 36px;
+}
+QPushButton#AddSuggestionButton {
+    min-width: 32px;
+    min-height: 28px;
+    padding: 2px 8px;
+    color: #00539b;
+    background: #ffffff;
+    border: 1px solid #b8d8fb;
+    border-radius: 6px;
+    font-weight: 750;
 }
 """
 
@@ -443,7 +473,9 @@ class MainWindow(QMainWindow):
         self.rule_add_inputs: dict[str, QLineEdit] = {}
         self.rule_search_inputs: dict[str, QLineEdit] = {}
         self.rule_search_labels: dict[str, QLabel] = {}
+        self.rule_discovery_lists: dict[str, QListWidget] = {}
         self.rule_item_widgets: dict[str, dict[str, QFrame]] = {}
+        self.rule_candidates: dict[str, list[str]] = empty_rule_candidates()
         self.default_icon = self.create_app_icon("#0067c0")
         self.running_icon = self.create_app_icon("#027a48")
         self.tray_icon: QSystemTrayIcon | None = None
@@ -483,12 +515,14 @@ class MainWindow(QMainWindow):
         self.exclude_files_text = self.rule_list()
         self.exclude_globs_text = self.rule_list()
         self.exclude_extensions_text = self.rule_list()
+        self.include_files_text = self.rule_list()
         self.include_extensions_text = self.rule_list()
         self.rule_editors = {
             "exclude_dirs": self.exclude_dirs_text,
             "exclude_files": self.exclude_files_text,
             "exclude_globs": self.exclude_globs_text,
             "exclude_extensions": self.exclude_extensions_text,
+            "include_files": self.include_files_text,
             "include_extensions": self.include_extensions_text,
         }
         self.rule_titles = {
@@ -496,7 +530,32 @@ class MainWindow(QMainWindow):
             "exclude_files": "Excluded files",
             "exclude_globs": "Excluded globs",
             "exclude_extensions": "Excluded extensions",
+            "include_files": "Included files",
             "include_extensions": "Included merge extensions",
+        }
+        self.rule_placeholders = {
+            "exclude_dirs": "Folder name, e.g. node_modules",
+            "exclude_files": "File name, e.g. package-lock.json",
+            "exclude_globs": "Glob path, e.g. storage/**",
+            "exclude_extensions": "Extension, e.g. .log",
+            "include_files": "Relative file path, e.g. storage/app/schema.json",
+            "include_extensions": "Extension to merge, e.g. .py",
+        }
+        self.rule_search_placeholders = {
+            "exclude_dirs": "Search rules or discovered folders",
+            "exclude_files": "Search rules or discovered files",
+            "exclude_globs": "Search rules or discovered paths",
+            "exclude_extensions": "Search rules or discovered extensions",
+            "include_files": "Search included files or discovered paths",
+            "include_extensions": "Search rules or discovered extensions",
+        }
+        self.rule_discovery_titles = {
+            "exclude_dirs": "Discovered folders",
+            "exclude_files": "Discovered files",
+            "exclude_globs": "Discovered paths",
+            "exclude_extensions": "Discovered extensions",
+            "include_files": "Discovered files",
+            "include_extensions": "Discovered extensions",
         }
         self.terminal = QPlainTextEdit()
         self.terminal.setObjectName("Terminal")
@@ -516,6 +575,7 @@ class MainWindow(QMainWindow):
             self.exclude_files_text,
             self.exclude_globs_text,
             self.exclude_extensions_text,
+            self.include_files_text,
             self.include_extensions_text,
         ]
 
@@ -529,6 +589,11 @@ class MainWindow(QMainWindow):
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(self.refresh_status)
         self.status_timer.start(500)
+
+        self.discovery_timer = QTimer(self)
+        self.discovery_timer.setSingleShot(True)
+        self.discovery_timer.timeout.connect(self.refresh_rule_suggestions)
+        self.schedule_rule_discovery()
 
         QTimer.singleShot(120, lambda: apply_mica_window(self, dark=False))
         self.log("info", "Native WinUI-style desktop app ready.")
@@ -632,6 +697,7 @@ class MainWindow(QMainWindow):
             widget.setEnabled(not running)
 
         self.set_rule_delete_buttons_enabled(not running)
+        self.set_rule_suggestion_buttons_enabled(not running)
         self.update_custom_preset_name_state()
         self.update_save_button_state()
         self.run_button.setEnabled(not running)
@@ -675,6 +741,15 @@ class MainWindow(QMainWindow):
                 if not item_widget:
                     continue
                 for button in item_widget.findChildren(QPushButton, "DeleteRuleButton"):
+                    button.setEnabled(enabled)
+
+    def set_rule_suggestion_buttons_enabled(self, enabled: bool) -> None:
+        for widget in self.rule_discovery_lists.values():
+            for index in range(widget.count()):
+                item_widget = widget.itemWidget(widget.item(index))
+                if not item_widget:
+                    continue
+                for button in item_widget.findChildren(QPushButton, "AddSuggestionButton"):
                     button.setEnabled(enabled)
 
     def build_sidebar(self) -> QWidget:
@@ -862,7 +937,8 @@ class MainWindow(QMainWindow):
         rules_grid.addWidget(self.rule_card("exclude_files"), 0, 1)
         rules_grid.addWidget(self.rule_card("exclude_globs"), 1, 0)
         rules_grid.addWidget(self.rule_card("exclude_extensions"), 1, 1)
-        rules_grid.addWidget(self.rule_card("include_extensions"), 2, 0, 1, 2)
+        rules_grid.addWidget(self.rule_card("include_files"), 2, 0, 1, 2)
+        rules_grid.addWidget(self.rule_card("include_extensions"), 3, 0, 1, 2)
         rules_grid.setColumnStretch(0, 1)
         rules_grid.setColumnStretch(1, 1)
         page_layout.addLayout(rules_grid)
@@ -1006,11 +1082,23 @@ class MainWindow(QMainWindow):
         widget.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         return widget
 
+    def rule_discovery_list(self) -> QListWidget:
+        widget = QListWidget()
+        widget.setObjectName("RuleDiscoveryList")
+        widget.setMinimumHeight(88)
+        widget.setMaximumHeight(120)
+        widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        widget.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        widget.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        return widget
+
     def rule_card(self, category: str) -> QFrame:
         editor = self.rule_editors[category]
         frame = self.card(self.rule_titles[category])
         frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        frame.setMinimumHeight(330)
+        frame.setMinimumHeight(430)
 
         search_row = QWidget()
         search_layout = QHBoxLayout(search_row)
@@ -1018,14 +1106,20 @@ class MainWindow(QMainWindow):
         search_layout.setSpacing(10)
         search_input = QLineEdit()
         search_input.setObjectName("RuleSearchInput")
-        search_input.setPlaceholderText("Search")
         search_status = QLabel("")
         search_status.setObjectName("Caption")
+        search_input.setPlaceholderText(self.rule_search_placeholders[category])
         search_layout.addWidget(search_input, 1)
         search_layout.addWidget(search_status)
         frame.layout().addWidget(search_row)
 
         frame.layout().addWidget(editor, 1)
+
+        discovery_label = QLabel(self.rule_discovery_titles[category])
+        discovery_label.setObjectName("Caption")
+        discovery_list = self.rule_discovery_list()
+        frame.layout().addWidget(discovery_label)
+        frame.layout().addWidget(discovery_list)
 
         add_row = QWidget()
         add_layout = QHBoxLayout(add_row)
@@ -1033,7 +1127,7 @@ class MainWindow(QMainWindow):
         add_layout.setSpacing(10)
         add_input = QLineEdit()
         add_input.setObjectName("RuleAddInput")
-        add_input.setPlaceholderText("Add rule")
+        add_input.setPlaceholderText(self.rule_placeholders[category])
         add_button = QPushButton("Add")
         add_layout.addWidget(add_input, 1)
         add_layout.addWidget(add_button)
@@ -1042,9 +1136,13 @@ class MainWindow(QMainWindow):
         self.rule_search_inputs[category] = search_input
         self.rule_search_labels[category] = search_status
         self.rule_add_inputs[category] = add_input
-        self.running_locked_widgets.extend([add_input, add_button])
+        self.rule_discovery_lists[category] = discovery_list
+        self.running_locked_widgets.extend([add_input, add_button, discovery_list])
 
         search_input.textChanged.connect(lambda _text, key=category: self.update_rule_search(key))
+        discovery_list.itemDoubleClicked.connect(
+            lambda item, key=category: self.add_rule_value(key, str(item.data(Qt.ItemDataRole.UserRole) or ""))
+        )
         add_button.clicked.connect(lambda _checked=False, key=category: self.add_rule_item(key))
         add_input.returnPressed.connect(lambda key=category: self.add_rule_item(key))
 
@@ -1065,10 +1163,20 @@ class MainWindow(QMainWindow):
         ]
         for widget in text_inputs:
             widget.textChanged.connect(lambda _text: self.mark_form_dirty())
+        self.project_root_input.textChanged.connect(lambda _text: self.schedule_rule_discovery())
 
         self.custom_preset_name_input.textChanged.connect(self.handle_custom_preset_name_changed)
         self.sync_lmstudio_input.stateChanged.connect(lambda _state: self.mark_form_dirty())
         self.backup_conversation_input.stateChanged.connect(lambda _state: self.mark_form_dirty())
+
+    def schedule_rule_discovery(self) -> None:
+        if hasattr(self, "discovery_timer"):
+            self.discovery_timer.start(300)
+
+    def refresh_rule_suggestions(self) -> None:
+        self.rule_candidates = discover_rule_candidates(self.project_root_input.text().strip())
+        for category in self.rule_editors:
+            self.update_rule_search(category)
 
     def clone_custom_presets(self, presets: object) -> dict[str, dict[str, object]]:
         normalized = normalize_custom_presets(presets)
@@ -1271,6 +1379,7 @@ class MainWindow(QMainWindow):
             "exclude_files": list(config.exclude_files),
             "exclude_globs": list(config.exclude_globs),
             "exclude_extensions": list(config.exclude_extensions),
+            "include_files": list(config.include_files),
             "include_extensions": list(config.include_extensions),
         }
 
@@ -1368,11 +1477,10 @@ class MainWindow(QMainWindow):
         for category in self.rule_editors:
             self.update_rule_search(category)
 
-    def add_rule_item(self, category: str) -> None:
-        add_input = self.rule_add_inputs[category]
-        value = self.normalize_rule_item(category, add_input.text())
+    def add_rule_value(self, category: str, raw_value: str) -> bool:
+        value = self.normalize_rule_item(category, raw_value)
         if not value:
-            return
+            return False
 
         existing = {
             self.rule_key(category, line)
@@ -1385,11 +1493,16 @@ class MainWindow(QMainWindow):
                 f"{self.rule_titles[category]} already contains:\n\n{value}",
             )
             self.select_rule_item(category, value)
-            return
+            return False
 
         self.append_rule_item(category, value)
-        add_input.clear()
         self.mark_rules_changed()
+        return True
+
+    def add_rule_item(self, category: str) -> None:
+        add_input = self.rule_add_inputs[category]
+        if self.add_rule_value(category, add_input.text()):
+            add_input.clear()
 
     def update_rule_search(self, category: str) -> None:
         widget = self.rule_editors[category]
@@ -1422,6 +1535,75 @@ class MainWindow(QMainWindow):
                 search_label.setText(
                     f"{visible_count} item" if visible_count == 1 else f"{visible_count} items"
                 )
+        self.update_rule_suggestions(category, query)
+
+    def update_rule_suggestions(self, category: str, query: str | None = None) -> None:
+        widget = self.rule_discovery_lists.get(category)
+        if not widget:
+            return
+
+        if query is None:
+            search_input = self.rule_search_inputs.get(category)
+            query = search_input.text().strip().lower() if search_input else ""
+
+        existing = {
+            self.rule_key(category, line)
+            for line in self.get_lines(self.rule_editors[category])
+        }
+        values = []
+        seen: set[str] = set()
+        for raw_value in self.rule_candidates.get(category, []):
+            value = self.normalize_rule_item(category, raw_value)
+            key = self.rule_key(category, value)
+            if not value or key in existing or key in seen:
+                continue
+            if query and query not in value.lower():
+                continue
+            seen.add(key)
+            values.append(value)
+            if len(values) >= 60:
+                break
+
+        widget.clear()
+        if not values:
+            item = QListWidgetItem("No discovered matches" if query else "No discovered items")
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+            widget.addItem(item)
+            return
+
+        for value in values:
+            self.append_rule_suggestion(category, value)
+
+    def append_rule_suggestion(self, category: str, value: str) -> None:
+        widget = self.rule_discovery_lists[category]
+
+        item = QListWidgetItem()
+        item.setData(Qt.ItemDataRole.UserRole, value)
+
+        row = QFrame()
+        row.setObjectName("RuleSuggestionItem")
+        row.setMinimumHeight(34)
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(10, 4, 6, 4)
+        row_layout.setSpacing(8)
+
+        label = QLabel(value)
+        label.setObjectName("RuleItemText")
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        label.setWordWrap(True)
+
+        add_button = QPushButton("+")
+        add_button.setObjectName("AddSuggestionButton")
+        add_button.setToolTip("Add discovered rule")
+        add_button.clicked.connect(lambda _checked=False, raw=value: self.add_rule_value(category, raw))
+        add_button.setEnabled(not self._watcher_running)
+
+        row_layout.addWidget(label, 1)
+        row_layout.addWidget(add_button)
+
+        widget.addItem(item)
+        item.setSizeHint(row.sizeHint())
+        widget.setItemWidget(item, row)
 
     def normalize_rule_item(self, category: str, value: str) -> str:
         text = value.strip()
@@ -1429,6 +1611,11 @@ class MainWindow(QMainWindow):
             return ""
         if category == "exclude_globs":
             return text.replace("\\", "/")
+        if category == "include_files":
+            normalized = text.replace("\\", "/")
+            while normalized.startswith("./"):
+                normalized = normalized[2:]
+            return normalized
         if category in {"exclude_extensions", "include_extensions"}:
             normalized = text.lower()
             if not normalized.startswith("."):
@@ -1562,6 +1749,7 @@ class MainWindow(QMainWindow):
                     config.exclude_files,
                     config.exclude_globs,
                     config.exclude_extensions,
+                    config.include_files,
                     config.include_extensions,
                 ]
             )
@@ -1572,6 +1760,7 @@ class MainWindow(QMainWindow):
                 self.set_rule_items("exclude_files", config.exclude_files)
                 self.set_rule_items("exclude_globs", config.exclude_globs)
                 self.set_rule_items("exclude_extensions", config.exclude_extensions)
+                self.set_rule_items("include_files", config.include_files)
                 self.set_rule_items("include_extensions", config.include_extensions)
             else:
                 self.apply_preset_rules(config.project_type)
@@ -1607,6 +1796,7 @@ class MainWindow(QMainWindow):
             exclude_files=self.get_rule_lines("exclude_files"),
             exclude_globs=self.get_rule_lines("exclude_globs"),
             exclude_extensions=self.get_rule_lines("exclude_extensions"),
+            include_files=self.get_rule_lines("include_files"),
             include_extensions=self.get_rule_lines("include_extensions"),
         )
         config.normalize()

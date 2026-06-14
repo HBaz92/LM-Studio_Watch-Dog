@@ -13,3 +13,4 @@ if ($py) {
 }
 
 throw "Python 3.10+ was not found. Install Python from https://www.python.org/downloads/ and try again."
+ 

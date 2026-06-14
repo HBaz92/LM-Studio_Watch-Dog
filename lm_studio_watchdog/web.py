@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import __version__
 from .config import AppConfig, load_config, save_config
+from .discovery import discover_rule_candidates
 from .pipeline import PipelineResult, run_pipeline
 from .presets import preset_payload
 from .watcher import PollingWatcher
@@ -134,6 +135,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             after = int(query.get("after", ["0"])[0] or 0)
             self.send_json({"logs": self.server.state.logs.after(after)})
+            return
+        if parsed.path == "/api/discovery":
+            query = parse_qs(parsed.query)
+            fallback_root = self.server.state.get_config().project_root
+            project_root = query.get("project_root", [fallback_root])[0] or fallback_root
+            self.send_json({"ok": True, "candidates": discover_rule_candidates(project_root)})
             return
 
         self.send_error_json(HTTPStatus.NOT_FOUND, "Route not found.")

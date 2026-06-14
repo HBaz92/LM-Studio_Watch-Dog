@@ -1,9 +1,46 @@
 const RULE_CATEGORIES = [
-  { key: "exclude_dirs", title: "Excluded folders", placeholder: "Add folder" },
-  { key: "exclude_files", title: "Excluded files", placeholder: "Add file" },
-  { key: "exclude_globs", title: "Excluded globs", placeholder: "Add glob" },
-  { key: "exclude_extensions", title: "Excluded extensions", placeholder: "Add extension" },
-  { key: "include_extensions", title: "Included merge extensions", placeholder: "Add extension" },
+  {
+    key: "exclude_dirs",
+    title: "Excluded folders",
+    placeholder: "Folder name, e.g. node_modules",
+    searchPlaceholder: "Search rules or discovered folders",
+    discoveryLabel: "Discovered folders",
+  },
+  {
+    key: "exclude_files",
+    title: "Excluded files",
+    placeholder: "File name, e.g. package-lock.json",
+    searchPlaceholder: "Search rules or discovered files",
+    discoveryLabel: "Discovered files",
+  },
+  {
+    key: "include_files",
+    title: "Included files",
+    placeholder: "Relative file path, e.g. storage/app/schema.json",
+    searchPlaceholder: "Search included files or discovered paths",
+    discoveryLabel: "Discovered files",
+  },
+  {
+    key: "exclude_globs",
+    title: "Excluded globs",
+    placeholder: "Glob path, e.g. storage/**",
+    searchPlaceholder: "Search rules or discovered paths",
+    discoveryLabel: "Discovered paths",
+  },
+  {
+    key: "exclude_extensions",
+    title: "Excluded extensions",
+    placeholder: "Extension, e.g. .log",
+    searchPlaceholder: "Search rules or discovered extensions",
+    discoveryLabel: "Discovered extensions",
+  },
+  {
+    key: "include_extensions",
+    title: "Included merge extensions",
+    placeholder: "Extension to merge, e.g. .py",
+    searchPlaceholder: "Search rules or discovered extensions",
+    discoveryLabel: "Discovered extensions",
+  },
 ];
 
 const els = {
@@ -47,12 +84,14 @@ const state = {
   presets: { project_types: [], presets: {} },
   customPresets: {},
   rules: emptyRules(),
+  discovery: emptyRules(),
   ruleElements: {},
   activeProjectType: "generic",
   savedSnapshot: "",
   formDirty: false,
   watcherRunning: false,
   loading: false,
+  discoveryTimer: null,
 };
 
 let lastLogId = 0;
@@ -104,6 +143,9 @@ function normalizeRuleItem(category, value) {
   }
   if (category === "exclude_globs") {
     return text.replace(/\\/g, "/");
+  }
+  if (category === "include_files") {
+    return text.replace(/\\/g, "/").replace(/^\.\//, "");
   }
   if (category === "exclude_extensions" || category === "include_extensions") {
     text = text.toLowerCase();
@@ -267,7 +309,7 @@ function renderRuleCards() {
   for (const category of RULE_CATEGORIES) {
     const card = document.createElement("section");
     card.className = "rule-card";
-    if (category.key === "include_extensions") {
+    if (category.key === "include_files" || category.key === "include_extensions") {
       card.classList.add("wide");
     }
 
@@ -276,10 +318,19 @@ function renderRuleCards() {
 
     const search = document.createElement("input");
     search.type = "search";
-    search.placeholder = "Search";
+    search.placeholder = category.searchPlaceholder;
 
     const list = document.createElement("div");
     list.className = "rule-list";
+
+    const discovery = document.createElement("div");
+    discovery.className = "rule-discovery";
+    const discoveryHead = document.createElement("div");
+    discoveryHead.className = "rule-discovery-head";
+    discoveryHead.textContent = category.discoveryLabel;
+    const discoveryList = document.createElement("div");
+    discoveryList.className = "rule-discovery-list";
+    discovery.append(discoveryHead, discoveryList);
 
     const addRow = document.createElement("div");
     addRow.className = "rule-add-row";
@@ -294,10 +345,17 @@ function renderRuleCards() {
     const count = document.createElement("span");
     count.className = "rule-count";
 
-    card.append(title, search, list, addRow, count);
+    card.append(title, search, list, discovery, addRow, count);
     els.rulesGrid.appendChild(card);
 
-    state.ruleElements[category.key] = { search, list, addInput, addButton, count };
+    state.ruleElements[category.key] = {
+      search,
+      list,
+      discoveryList,
+      addInput,
+      addButton,
+      count,
+    };
     search.addEventListener("input", () => renderRuleList(category.key));
     addButton.addEventListener("click", () => addRuleItem(category.key));
     addInput.addEventListener("keydown", (event) => {
@@ -317,8 +375,10 @@ function renderRuleList(category) {
 
   const query = parts.search.value.trim().toLowerCase();
   const values = state.rules[category] || [];
+  const existingKeys = new Set(values.map((value) => ruleKey(category, value)));
   const filtered = values.filter((value) => !query || value.toLowerCase().includes(query));
   parts.list.innerHTML = "";
+  parts.discoveryList.innerHTML = "";
 
   for (const value of filtered) {
     const row = document.createElement("div");
@@ -342,6 +402,30 @@ function renderRuleList(category) {
     parts.list.appendChild(empty);
   }
 
+  const discovered = (state.discovery[category] || [])
+    .map((value) => normalizeRuleItem(category, value))
+    .filter((value) => value && !existingKeys.has(ruleKey(category, value)))
+    .filter((value) => !query || value.toLowerCase().includes(query))
+    .slice(0, 60);
+
+  for (const value of discovered) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "rule-suggestion";
+    button.textContent = value;
+    button.title = `Add ${value}`;
+    button.disabled = state.watcherRunning;
+    button.addEventListener("click", () => addRuleValue(category, value));
+    parts.discoveryList.appendChild(button);
+  }
+
+  if (!discovered.length) {
+    const empty = document.createElement("div");
+    empty.className = "rule-empty compact";
+    empty.textContent = query ? "No discovered matches" : "No discovered items";
+    parts.discoveryList.appendChild(empty);
+  }
+
   parts.count.textContent = query ? `${filtered.length} of ${values.length}` : `${values.length} item${values.length === 1 ? "" : "s"}`;
   parts.addInput.disabled = state.watcherRunning;
   parts.addButton.disabled = state.watcherRunning;
@@ -362,26 +446,33 @@ function switchToCustomAfterRuleEdit() {
   updateCustomPresetControls();
 }
 
-function addRuleItem(category) {
-  const parts = state.ruleElements[category];
-  const value = normalizeRuleItem(category, parts.addInput.value);
+function addRuleValue(category, rawValue) {
+  const value = normalizeRuleItem(category, rawValue);
   if (!value) {
-    return;
+    return false;
   }
 
   const exists = new Set((state.rules[category] || []).map((item) => ruleKey(category, item)));
   if (exists.has(ruleKey(category, value))) {
     alert(`${ruleTitle(category)} already contains:\n\n${value}`);
+    const parts = state.ruleElements[category];
     parts.search.value = value;
     renderRuleList(category);
-    return;
+    return false;
   }
 
   state.rules[category].push(value);
-  parts.addInput.value = "";
   switchToCustomAfterRuleEdit();
   renderRuleList(category);
   markDirty();
+  return true;
+}
+
+function addRuleItem(category) {
+  const parts = state.ruleElements[category];
+  if (addRuleValue(category, parts.addInput.value)) {
+    parts.addInput.value = "";
+  }
 }
 
 function removeRuleItem(category, value) {
@@ -523,6 +614,7 @@ function writeConfigToForm(config) {
   } finally {
     state.loading = false;
     updateControls();
+    scheduleDiscoveryRefresh();
   }
 }
 
@@ -585,10 +677,7 @@ function updateControls() {
   els.startBtn.disabled = locked;
   els.stopBtn.disabled = !locked;
   updateCustomPresetControls();
-
-  for (const category of RULE_CATEGORIES) {
-    renderRuleList(category.key);
-  }
+  renderAllRuleLists();
 }
 
 async function getJson(url, options = {}) {
@@ -608,6 +697,36 @@ async function postJson(url, body = {}) {
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+function renderAllRuleLists() {
+  for (const category of RULE_CATEGORIES) {
+    renderRuleList(category.key);
+  }
+}
+
+function scheduleDiscoveryRefresh() {
+  window.clearTimeout(state.discoveryTimer);
+  state.discoveryTimer = window.setTimeout(() => {
+    refreshDiscovery().catch(() => {
+      state.discovery = emptyRules();
+      renderAllRuleLists();
+    });
+  }, 250);
+}
+
+async function refreshDiscovery() {
+  const projectRoot = els.projectRoot.value.trim();
+  if (!projectRoot) {
+    state.discovery = emptyRules();
+    renderAllRuleLists();
+    return;
+  }
+
+  const query = new URLSearchParams({ project_root: projectRoot });
+  const payload = await getJson(`/api/discovery?${query.toString()}`);
+  state.discovery = cloneRules(payload.candidates || {});
+  renderAllRuleLists();
 }
 
 function renderState(payload) {
@@ -683,6 +802,7 @@ async function chooseProject() {
   const data = await postJson("/api/dialog/project");
   if (data.path) {
     els.projectRoot.value = data.path;
+    scheduleDiscoveryRefresh();
     markDirty();
   }
 }
@@ -714,6 +834,8 @@ function wireEvents() {
     element.addEventListener("input", markDirty);
     element.addEventListener("change", markDirty);
   }
+  els.projectRoot.addEventListener("input", scheduleDiscoveryRefresh);
+  els.projectRoot.addEventListener("change", scheduleDiscoveryRefresh);
 
   els.projectType.addEventListener("change", handleProjectTypeChanged);
   els.customPresetName.addEventListener("input", handleCustomPresetNameChanged);

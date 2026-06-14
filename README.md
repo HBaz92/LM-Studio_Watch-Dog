@@ -95,6 +95,7 @@ Custom presets support:
 - Excluded files.
 - Excluded globs.
 - Excluded extensions.
+- Included files, which can override broader folder or glob exclusions for specific relative paths.
 - Included merge extensions.
 
 If you edit rules while a built-in preset is selected, the app automatically switches to a custom preset. This keeps built-in presets stable and makes the custom behavior explicit.

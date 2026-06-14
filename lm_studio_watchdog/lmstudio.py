@@ -52,6 +52,9 @@ def replace_first_message(conversation: dict[str, Any], new_text: str) -> None:
     if not isinstance(first_message, dict):
         raise LMStudioConversationError("First message is not an object.")
 
+    new_content = [{"type": "text", "text": new_text}]
+    new_preprocessed = {"role": "user", "content": new_content}
+
     versions = first_message.get("versions")
     if isinstance(versions, list):
         if not versions:
@@ -63,12 +66,16 @@ def replace_first_message(conversation: dict[str, Any], new_text: str) -> None:
             raise LMStudioConversationError("First message version is not an object.")
 
         first_version["role"] = "user"
-        first_version["content"] = [{"type": "text", "text": new_text}]
+        first_version["content"] = new_content
+        # ✅ Fix: update preprocessed so the model actually receives the new context
+        first_version["preprocessed"] = new_preprocessed
         first_message["currentlySelected"] = 0
         return
 
     first_message["role"] = "user"
-    first_message["content"] = [{"type": "text", "text": new_text}]
+    first_message["content"] = new_content
+    # ✅ Fix: same for flat structure
+    first_message["preprocessed"] = new_preprocessed
 
 
 def sync_first_message(

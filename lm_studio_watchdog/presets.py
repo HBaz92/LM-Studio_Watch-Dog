@@ -563,6 +563,7 @@ class RuleSet:
     exclude_files: frozenset[str]
     exclude_globs: frozenset[str]
     exclude_extensions: frozenset[str]
+    include_files: frozenset[str]
     include_extensions: frozenset[str]
     include_filenames: frozenset[str]
     max_file_size_bytes: int
@@ -590,6 +591,7 @@ def build_rules(config: AppConfig) -> RuleSet:
         exclude_files=frozenset(exclude_files),
         exclude_globs=frozenset(exclude_globs),
         exclude_extensions=frozenset(exclude_extensions),
+        include_files=frozenset(config.include_files),
         include_extensions=frozenset(include_extensions),
         include_filenames=frozenset(COMMON_INCLUDE_FILENAMES),
         max_file_size_bytes=max(1, int(config.max_file_size_kb)) * 1024,
@@ -618,6 +620,7 @@ def preset_rule_lists(project_type: str) -> dict[str, list[str]]:
         "exclude_files": sorted(preset["files"], key=str.lower),
         "exclude_globs": sorted(preset["globs"], key=str.lower),
         "exclude_extensions": sorted(preset["extensions"], key=str.lower),
+        "include_files": sorted(preset.get("include_files", set()), key=str.lower),
         "include_extensions": sorted(preset["include_extensions"], key=str.lower),
     }
 

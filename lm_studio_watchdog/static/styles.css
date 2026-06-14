@@ -443,6 +443,54 @@ select:focus {
   color: var(--muted);
 }
 
+.rule-empty.compact {
+  min-height: 32px;
+  width: 100%;
+  font-size: 12px;
+}
+
+.rule-discovery {
+  display: grid;
+  gap: 6px;
+}
+
+.rule-discovery-head {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rule-discovery-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 48px;
+  max-height: 96px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f7fbff;
+}
+
+.rule-suggestion {
+  min-height: 30px;
+  max-width: 100%;
+  padding: 4px 9px;
+  border-color: #b8d8fb;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.rule-suggestion:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: #d8ebff;
+}
+
 .rule-count {
   min-height: 20px;
   font-size: 12px;

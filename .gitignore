@@ -19,7 +19,7 @@ env/
 build/
 dist/
 *.spec.bak
-
+*.zip
 .env
 .env.*
 !.env.example
