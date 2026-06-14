@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LM Studio Watch Dog</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">WD</div>
+          <div>
+            <h1>LM Studio</h1>
+            <p>Watch Dog <span id="versionLabel"></span></p>
+          </div>
+        </div>
+
+        <div id="runningNotice" class="running-notice" hidden>
+          Watcher is running. Settings and rules are locked until it stops.
+        </div>
+
+        <div class="status-panel">
+          <div class="status-row">
+            <span>Watcher</span>
+            <strong id="watcherState">Stopped</strong>
+          </div>
+          <div class="status-row">
+            <span>Last run</span>
+            <strong id="lastRun">Never</strong>
+          </div>
+          <div class="status-row">
+            <span>Last change</span>
+            <strong id="lastChange">Never</strong>
+          </div>
+          <div class="status-row">
+            <span>Merged files</span>
+            <strong id="mergedCount">0</strong>
+          </div>
+        </div>
+
+        <div class="actions vertical">
+          <button id="saveBtn" class="primary" disabled>Save Settings</button>
+          <button id="runBtn">Run Once</button>
+          <button id="startBtn">Start Watcher</button>
+          <button id="stopBtn" disabled>Stop Watcher</button>
+          <button id="shutdownBtn" class="danger">Exit App</button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="hero">
+          <div>
+            <h2>Project Context Workspace</h2>
+            <p>Build structure, merge allowed files, and sync LM Studio from one local window.</p>
+          </div>
+          <span id="saveState" class="save-pill">Saved</span>
+        </header>
+
+        <nav class="tabs" aria-label="Workspace tabs">
+          <button class="tab-button active" type="button" data-tab="settings">Settings</button>
+          <button class="tab-button" type="button" data-tab="rules">Rules</button>
+          <button class="tab-button" type="button" data-tab="output">Output</button>
+          <button class="tab-button" type="button" data-tab="terminal">Terminal</button>
+        </nav>
+
+        <section id="tab-settings" class="tab-page active" data-tab-page="settings">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Project</h2>
+            </div>
+
+            <div class="form-grid">
+              <label class="field wide">
+                <span>Project folder</span>
+                <div class="input-row">
+                  <input id="projectRoot" type="text" placeholder="C:\path\to\project" />
+                  <button id="browseProjectBtn" type="button">Browse</button>
+                </div>
+              </label>
+
+              <label class="field wide">
+                <span>Output folder</span>
+                <input id="outputDir" type="text" placeholder=".lmstudio-watchdog" />
+              </label>
+
+              <label class="field">
+                <span>Max file size KB</span>
+                <input id="maxFileSizeKb" type="number" min="1" max="102400" />
+              </label>
+
+              <label class="field">
+                <span>Poll seconds</span>
+                <input id="pollInterval" type="number" min="0.5" step="0.5" />
+              </label>
+
+              <label class="field">
+                <span>Debounce seconds</span>
+                <input id="debounceSeconds" type="number" min="0.1" step="0.1" />
+              </label>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Project Preset</h2>
+            </div>
+
+            <div class="form-grid">
+              <label class="field wide">
+                <span>Project type</span>
+                <div class="preset-row">
+                  <select id="projectType"></select>
+                  <button id="newCustomPresetBtn" type="button">New Custom</button>
+                  <button id="deleteCustomPresetBtn" type="button">Delete Custom</button>
+                </div>
+              </label>
+
+              <label class="field wide">
+                <span>Custom preset name</span>
+                <input id="customPresetName" type="text" placeholder="custom" disabled />
+              </label>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>LM Studio</h2>
+              <label class="toggle">
+                <input id="syncLmstudio" type="checkbox" />
+                <span>Sync first message</span>
+              </label>
+            </div>
+
+            <div class="form-grid">
+              <label class="field wide">
+                <span>Conversation JSON</span>
+                <div class="input-row">
+                  <input
+                    id="conversationPath"
+                    type="text"
+                    placeholder="C:\Users\you\.lmstudio\conversations\...\*.conversation.json"
+                  />
+                  <button id="browseConversationBtn" type="button">Browse</button>
+                </div>
+              </label>
+
+              <label class="toggle inline">
+                <input id="backupConversation" type="checkbox" />
+                <span>Create backup before first sync</span>
+              </label>
+            </div>
+          </section>
+        </section>
+
+        <section id="tab-rules" class="tab-page" data-tab-page="rules">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Rules</h2>
+              <span class="muted">Search, add, and remove one rule at a time.</span>
+            </div>
+
+            <div id="rulesGrid" class="rules-grid"></div>
+          </section>
+        </section>
+
+        <section id="tab-output" class="tab-page" data-tab-page="output">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Output</h2>
+              <button id="refreshBtn" type="button">Refresh</button>
+            </div>
+            <div class="output-grid">
+              <div>
+                <span>Structure file</span>
+                <code id="structurePath">-</code>
+              </div>
+              <div>
+                <span>Merged file</span>
+                <code id="mergedPath">-</code>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section id="tab-terminal" class="tab-page" data-tab-page="terminal">
+          <section class="terminal-panel">
+            <div class="panel-head">
+              <h2>Terminal</h2>
+              <button id="clearLogsBtn" type="button">Clear</button>
+            </div>
+            <pre id="terminal" aria-live="polite"></pre>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
