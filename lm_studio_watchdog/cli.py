@@ -25,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_once.add_argument("--sync-lmstudio", action="store_true")
     run_once.add_argument("--no-backup", action="store_true")
     run_once.add_argument("--max-file-size-kb", type=int, default=512)
+    run_once.add_argument("--use-gitnexus", action="store_true")
 
     parser.set_defaults(command="serve", host="127.0.0.1", port=8765, no_browser=False)
     return parser
@@ -43,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
             sync_lmstudio=args.sync_lmstudio,
             backup_conversation=not args.no_backup,
             max_file_size_kb=args.max_file_size_kb,
+            use_gitnexus=args.use_gitnexus,
         )
         result = run_pipeline(config, logger=print)
         return 0 if result.ok else 1

@@ -7,6 +7,8 @@ from .config import AppConfig, is_custom_project_type
 
 COMMON_EXCLUDE_DIRS = {
     ".git",
+    ".gitnexus",
+    ".claude",
     ".hg",
     ".svn",
     ".idea",

@@ -63,6 +63,7 @@ const els = {
   syncLmstudio: document.getElementById("syncLmstudio"),
   conversationPath: document.getElementById("conversationPath"),
   backupConversation: document.getElementById("backupConversation"),
+  useGitnexus: document.getElementById("useGitnexus"),
   rulesGrid: document.getElementById("rulesGrid"),
   tabButtons: [...document.querySelectorAll(".tab-button")],
   tabPages: [...document.querySelectorAll("[data-tab-page]")],
@@ -568,6 +569,7 @@ function readConfigFromForm() {
     sync_lmstudio: els.syncLmstudio.checked,
     conversation_path: els.conversationPath.value.trim(),
     backup_conversation: els.backupConversation.checked,
+    use_gitnexus: els.useGitnexus.checked,
     ...currentRulePayload(),
   };
 }
@@ -596,6 +598,7 @@ function writeConfigToForm(config) {
     els.syncLmstudio.checked = Boolean(config.sync_lmstudio);
     els.conversationPath.value = config.conversation_path || "";
     els.backupConversation.checked = config.backup_conversation !== false;
+    els.useGitnexus.checked = Boolean(config.use_gitnexus);
 
     if (isCustomProjectType(config.project_type)) {
       loadSelectedCustomPreset(config.project_type);
@@ -664,6 +667,7 @@ function updateControls() {
     els.syncLmstudio,
     els.conversationPath,
     els.backupConversation,
+    els.useGitnexus,
     els.browseProjectBtn,
     els.browseConversationBtn,
   ];
@@ -829,6 +833,7 @@ function wireEvents() {
     els.syncLmstudio,
     els.conversationPath,
     els.backupConversation,
+    els.useGitnexus,
   ];
   for (const element of dirtyInputs) {
     element.addEventListener("input", markDirty);

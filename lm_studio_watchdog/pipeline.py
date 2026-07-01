@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from .config import AppConfig
+from .gitnexus_bridge import get_impact_summary, run_analyze
 from .lmstudio import sync_first_message
 from .presets import build_rules
 from .scanner import generate_project_tree, iter_mergeable_files
@@ -187,13 +188,31 @@ def run_pipeline(config: AppConfig, logger: Logger | None = None) -> PipelineRes
         atomic_write_text(merged_path, merged_text)
         log(f"Merged {files_merged} file(s): {merged_path}")
 
+        sync_text = merged_text
+        if config.use_gitnexus:
+            # GitNexus does a full build on the first run and incremental
+            # updates afterward, so it is safe to call this on every pipeline
+            # run (including from the continuous watcher) rather than only
+            # once manually.
+            run_analyze(project_root, logger=log)
+            impact_text = get_impact_summary(project_root, logger=log)
+            if impact_text:
+                sync_text = (
+                    "## GitNexus Impact Summary (uncommitted changes)\n\n"
+                    f"{impact_text}\n\n"
+                    "---\n\n"
+                ) + merged_text
+                log("GitNexus impact summary prepended to context.")
+            # If GitNexus has no data (not indexed / not installed), sync_text
+            # silently stays as the full merge below — no behavior change.
+
         lmstudio_synced = False
         if config.sync_lmstudio:
             if not config.conversation_path:
                 log("LM Studio sync skipped: no conversation path configured.")
             else:
                 sync_first_message(
-                    merged_text,
+                    sync_text,
                     config.conversation_file,
                     backup=config.backup_conversation,
                     logger=log,

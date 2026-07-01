@@ -26,6 +26,7 @@ The main application is a native desktop app built with PySide6/Qt. The browser 
   - `merged-files.md`
 - Optional LM Studio first-message sync with optional backup.
 - Optional local web UI.
+- Optional GitNexus impact-summary integration: prepends a focused "what changed / what depends on it" summary (from GitNexus's code knowledge graph) to the merged context, instead of relying on the model to re-read the whole project.
 - CLI commands for one-shot runs and local web serving.
 - Portable Windows EXE build through PyInstaller.
 
@@ -122,6 +123,33 @@ http://127.0.0.1:8765/
 
 If port `8765` is busy, the app tries the next available port. The web UI supports the same preset model as the desktop app, including multiple custom presets, rule search, add/remove controls, dirty save state, and locked settings while the watcher is running.
 
+## GitNexus Integration (Optional)
+
+[GitNexus](https://github.com/abhigyanpatwari/GitNexus) builds a local knowledge graph of a codebase (symbols, calls, imports, dependencies) and can report the blast radius of a change: which functions and files are affected by what you just edited. Watch Dog can use this to prepend a short, targeted impact summary to the merged context instead of, or in addition to, the full project merge.
+
+### Requirements
+
+- Node.js and `npx` available on `PATH`.
+- GitNexus installed globally (recommended) or resolvable via `npx`:
+
+```powershell
+npm i -g gitnexus
+```
+
+### Enabling It
+
+1. Open the **Context Intelligence** section in the desktop app or web UI.
+2. Check **"Prepend GitNexus impact summary"**.
+3. Save settings and run once or start the watcher.
+
+The first run in a project indexes it automatically (equivalent to `npx gitnexus analyze`). This first index can take a while on large projects; later runs are incremental and fast. The index is stored in a `.gitnexus/` folder inside the project root and is excluded from the project scan and from the merged context by default, just like `.git`.
+
+### Notes
+
+- GitNexus keeps a single global registry (`~/.gitnexus/registry.json`) shared across every project analyzed on the machine. If GitNexus is not installed or a command fails, Watch Dog logs the failure and falls back to the full merged context; this setting never blocks a pipeline run.
+- Watch Dog calls GitNexus with flags that skip GitNexus's own `AGENTS.md` / `CLAUDE.md` / `.claude/skills/` generation, since those files being rewritten on every run would otherwise look like a project change and trigger the watcher again.
+- This integration is unrelated to `.lmstudio-watchdog/`, the folder used for this app's own generated output.
+
 ## Docker
 
 Docker is intended for the local web UI and CLI workflows. The native PySide6 desktop app should be run directly on Windows or packaged as an EXE.
@@ -194,6 +222,15 @@ python -m lm_studio_watchdog run-once `
   --max-file-size-kb 10240
 ```
 
+Run once with GitNexus impact summaries enabled (requires `npx gitnexus analyze` support; see [GitNexus Integration](#gitnexus-integration-optional)):
+
+```powershell
+python -m lm_studio_watchdog run-once `
+  --project "C:\path\to\project" `
+  --type python `
+  --use-gitnexus
+```
+
 ## LM Studio Conversation Sync
 
 LM Studio conversations are usually stored under a path similar to:
@@ -235,6 +272,7 @@ The project ignores local configuration, generated output, and build artifacts:
 ```text
 data/
 .lmstudio-watchdog/
+.gitnexus/
 build/
 dist/
 project_structure.md
@@ -257,6 +295,7 @@ lm_studio_watchdog/
   scanner.py      # file discovery and project tree generation
   pipeline.py     # structure + merge + optional LM Studio sync
   lmstudio.py     # conversation JSON update logic
+  gitnexus_bridge.py  # optional GitNexus impact-summary integration
   watcher.py      # polling watcher
   desktop.py      # native PySide6 desktop app
   win_mica.py     # Windows Mica support helper
@@ -267,3 +306,5 @@ lm_studio_watchdog/
 ## Privacy and Safety
 
 The app runs locally and does not send project files to an external server. However, generated files and synced LM Studio messages may include code, secrets, or private project details that already exist in your project. Review include/exclude rules before sharing generated context files.
+
+If GitNexus integration is enabled, GitNexus itself runs locally via `npx` and stores its index in `.gitnexus/` inside the project. Watch Dog does not send any data to GitNexus's own cloud services; see the [GitNexus repository](https://github.com/abhigyanpatwari/GitNexus) for its own privacy details.

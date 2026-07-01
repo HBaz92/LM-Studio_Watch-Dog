@@ -152,6 +152,24 @@
               </label>
             </div>
           </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Context Intelligence</h2>
+              <label class="toggle">
+                <input id="useGitnexus" type="checkbox" />
+                <span>Prepend GitNexus impact summary</span>
+              </label>
+            </div>
+            <div class="form-grid">
+              <p class="hint wide">
+                Requires GitNexus installed (<code>npm i -g gitnexus</code>) and indexed once per
+                project (<code>npx gitnexus analyze</code>) in the project root. When enabled, a
+                focused "what changed / what depends on it" summary is prepended to the merged
+                context instead of relying on the model to re-read the whole project.
+              </p>
+            </div>
+          </section>
         </section>
 
         <section id="tab-rules" class="tab-page" data-tab-page="rules">

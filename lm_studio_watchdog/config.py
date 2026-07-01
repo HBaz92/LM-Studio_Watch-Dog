@@ -101,6 +101,7 @@ class AppConfig:
     exclude_extensions: list[str] = field(default_factory=list)
     include_files: list[str] = field(default_factory=list)
     include_extensions: list[str] = field(default_factory=list)
+    use_gitnexus: bool = False
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AppConfig":

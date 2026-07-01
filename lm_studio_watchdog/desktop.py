@@ -485,6 +485,7 @@ class MainWindow(QMainWindow):
         self.bus = EventBus()
         self.bus.log_received.connect(self.append_terminal)
         self.bus.refresh_requested.connect(self.refresh_status)
+        self.bus.refresh_requested.connect(self.schedule_rule_discovery)
 
         self.watcher = PollingWatcher(self.get_config, self.run_pipeline, self.log)
 
@@ -503,6 +504,7 @@ class MainWindow(QMainWindow):
         self.conversation_path_input = QLineEdit()
         self.sync_lmstudio_input = QCheckBox("Sync first LM Studio message")
         self.backup_conversation_input = QCheckBox("Create backup before first sync")
+        self.use_gitnexus_input = QCheckBox("Prepend GitNexus impact summary (requires 'npx gitnexus analyze')")
 
         self.watcher_value = QLabel("Stopped")
         self.last_run_value = QLabel("Never")
@@ -571,6 +573,7 @@ class MainWindow(QMainWindow):
             self.conversation_path_input,
             self.sync_lmstudio_input,
             self.backup_conversation_input,
+            self.use_gitnexus_input,
             self.exclude_dirs_text,
             self.exclude_files_text,
             self.exclude_globs_text,
@@ -906,8 +909,12 @@ class MainWindow(QMainWindow):
         lmstudio.layout().addWidget(self.sync_lmstudio_input)
         lmstudio.layout().addWidget(self.backup_conversation_input)
 
+        context_intelligence = self.card("Context Intelligence")
+        context_intelligence.layout().addWidget(self.use_gitnexus_input)
+
         page_layout.addWidget(project)
         page_layout.addWidget(lmstudio)
+        page_layout.addWidget(context_intelligence)
         page_layout.addStretch(1)
         scroll.setWidget(page)
         return scroll
@@ -1168,6 +1175,7 @@ class MainWindow(QMainWindow):
         self.custom_preset_name_input.textChanged.connect(self.handle_custom_preset_name_changed)
         self.sync_lmstudio_input.stateChanged.connect(lambda _state: self.mark_form_dirty())
         self.backup_conversation_input.stateChanged.connect(lambda _state: self.mark_form_dirty())
+        self.use_gitnexus_input.stateChanged.connect(lambda _state: self.mark_form_dirty())
 
     def schedule_rule_discovery(self) -> None:
         if hasattr(self, "discovery_timer"):
@@ -1742,6 +1750,7 @@ class MainWindow(QMainWindow):
             self.conversation_path_input.setText(config.conversation_path)
             self.sync_lmstudio_input.setChecked(config.sync_lmstudio)
             self.backup_conversation_input.setChecked(config.backup_conversation)
+            self.use_gitnexus_input.setChecked(config.use_gitnexus)
 
             has_saved_rules = any(
                 [
@@ -1789,6 +1798,7 @@ class MainWindow(QMainWindow):
             conversation_path=self.conversation_path_input.text(),
             sync_lmstudio=self.sync_lmstudio_input.isChecked(),
             backup_conversation=self.backup_conversation_input.isChecked(),
+            use_gitnexus=self.use_gitnexus_input.isChecked(),
             poll_interval_seconds=self.poll_interval_input.text(),
             debounce_seconds=self.debounce_input.text(),
             max_file_size_kb=self.max_file_size_input.text(),
